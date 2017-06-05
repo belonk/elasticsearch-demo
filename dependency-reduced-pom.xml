@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <parent>
+    <artifactId>mvn-base</artifactId>
+    <groupId>com.belonk</groupId>
+    <version>1.0-SNAPSHOT</version>
+    <relativePath>../mvn-base/pom.xml</relativePath>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>es-demo</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <build>
+    <resources>
+      <resource>
+        <filtering>true</filtering>
+        <directory>src/main/resources</directory>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>2.4.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer />
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <profile>
+      <id>sun</id>
+      <properties>
+        <mysql.jdbc.password>HMaliyun-20161019</mysql.jdbc.password>
+        <application.context.ip>localhost</application.context.ip>
+        <log4j.log.level>debug</log4j.log.level>
+        <file.save.path>E:/02-work/02-mine/01-hmp/apache-tomcat-8.5.6/webapps/files</file.save.path>
+        <mysql.jdbc.url>rm-bp15lcu5w65nm08kn.mysql.rds.aliyuncs.com:3306/hmp-uat</mysql.jdbc.url>
+        <log4j.logfile.path>e:/logs/hmp.log</log4j.logfile.path>
+        <redis.pass>hmp_uat</redis.pass>
+        <redis.host>101.37.32.245</redis.host>
+        <ispro>true</ispro>
+        <file.server.url>http://localhost:8088/files/</file.server.url>
+        <mysql.path>E:\work\mvn-repo\mysql\mysql-connector-java\5.1.38\mysql-connector-java-5.1.38.jar</mysql.path>
+        <mysql.jdbc.username>hmp</mysql.jdbc.username>
+      </properties>
+    </profile>
+  </profiles>
+</project>
+
