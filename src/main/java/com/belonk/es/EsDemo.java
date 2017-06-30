@@ -11,6 +11,8 @@ import org.elasticsearch.action.get.*;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.MultiSearchResponse;
+import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -32,6 +34,31 @@ import org.elasticsearch.script.ScriptService;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.InternalAggregations;
+import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInterval;
+import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.metrics.avg.Avg;
+import org.elasticsearch.search.aggregations.metrics.avg.AvgAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.max.Max;
+import org.elasticsearch.search.aggregations.metrics.max.MaxAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.min.Min;
+import org.elasticsearch.search.aggregations.metrics.min.MinAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.percentiles.Percentile;
+import org.elasticsearch.search.aggregations.metrics.percentiles.Percentiles;
+import org.elasticsearch.search.aggregations.metrics.percentiles.PercentilesAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.stats.Stats;
+import org.elasticsearch.search.aggregations.metrics.stats.StatsAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.stats.extended.ExtendedStats;
+import org.elasticsearch.search.aggregations.metrics.stats.extended.ExtendedStatsAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.sum.Sum;
+import org.elasticsearch.search.aggregations.metrics.sum.SumAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.tophits.TopHits;
+import org.elasticsearch.search.aggregations.metrics.valuecount.ValueCount;
+import org.elasticsearch.search.aggregations.metrics.valuecount.ValueCountAggregationBuilder;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
@@ -90,6 +117,44 @@ public class EsDemo {
     }
 
     //~ Methods ========================================================================================================
+
+    public void closeClient() {
+        this.client.close();
+    }
+
+    public void basicDemo() throws UnknownHostException {
+        Settings settings = Settings.builder().put("cluster.name", "my-application").build();
+        TransportClient client = new PreBuiltTransportClient(settings)
+                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("localhost"), 9300));
+
+        String json = "{\n" +
+                "    \"first_name\" : \"John\",\n" +
+                "    \"last_name\" :  \"Smith\",\n" +
+                "    \"age\" :        25,\n" +
+                "    \"about\" :      \"I love to go rock climbing\",\n" +
+                "    \"interests\": [ \"sports\", \"music\" ]\n" +
+                "}\n";
+        IndexResponse response = client.prepareIndex("megacorp", "employee", "1")
+                .setSource(json, XContentType.JSON).get();
+
+        // Index name
+        String index = response.getIndex();
+        // Type name
+        String type = response.getType();
+        // Document ID (generated or not)
+        String id = response.getId();
+        // Version (if it's the first time you index this document, you will get: 1)
+        long version = response.getVersion();
+        // status has stored current instance statement.
+        RestStatus status = response.status();
+
+        System.out.println("name    : " + index);
+        System.out.println("type    : " + type);
+        System.out.println("id      : " + id);
+        System.out.println("version : " + version);
+        System.out.println("st      : " + status.getStatus());
+        client.close();
+    }
 
     public void index() {
         users.forEach(user -> {
@@ -531,43 +596,223 @@ public class EsDemo {
         while (scrollResp.getHits().getHits().length != 0); // Zero hits mark the end of the scroll and the while loop.
     }
 
-    public void closeClient() {
-        this.client.close();
+    public void multiSearch() {
+        SearchRequestBuilder srb1 = client
+                .prepareSearch().setQuery(QueryBuilders.queryStringQuery("sun1")).setSize(1);
+        SearchRequestBuilder srb2 = client
+                .prepareSearch().setQuery(QueryBuilders.matchQuery("age", "100")).setSize(1);
+
+        MultiSearchResponse sr = client.prepareMultiSearch()
+                .add(srb1)
+                .add(srb2)
+                .get();
+
+        // You will get all individual responses from MultiSearchResponse#getResponses()
+        long nbHits = 0;
+        for (MultiSearchResponse.Item item : sr.getResponses()) {
+            SearchResponse response = item.getResponse();
+            print(response);
+            nbHits += response.getHits().getTotalHits();
+        }
+        System.out.println(nbHits);
     }
 
-    public void basicDemo() throws UnknownHostException {
-        Settings settings = Settings.builder().put("cluster.name", "my-application").build();
-        TransportClient client = new PreBuiltTransportClient(settings)
-                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("localhost"), 9300));
+    // ~ search api with aggregations test start =======================================================================
+    public void aggregation() {
+        /*
+        $ curl -XGET 'localhost:9200/megacorp/employee/_search?pretty' -H 'Content-Type: application/json' -d'
+         {
+           "query": {
+             "match": {
+               "last_name": "smith"
+             }
+           },
+           "aggs": {
+             "all_interests": {
+               "terms": {
+                 "field": "interests"       }
+        }
+        }
+        }
+        '
+          % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                         Dload  Upload   Total   Spent    Left  Speed
+        100  1061  100   887  100   174  14306   2806 --:--:-- --:--:-- --:--:-- 14306{
+          "took" : 41,
+          "timed_out" : false,
+          "_shards" : {
+            "total" : 5,
+            "successful" : 3,
+            "failed" : 0
+          },
+          "hits" : {
+            "total" : 1,
+            "max_score" : 0.2876821,
+            "hits" : [
+              {
+                "_index" : "megacorp",
+                "_type" : "employee",
+                "_id" : "1",
+                "_score" : 0.2876821,
+                "_source" : {
+                  "first_name" : "John",
+                  "last_name" : "Smith",
+                  "age" : 25,
+                  "about" : "I love to go rock climbing",
+                  "interests" : [
+                    "sports",
+                    "music"
+                  ]
+                }
+              }
+            ]
+          },
+          "aggregations" : {
+            "all_interests" : {
+              "doc_count_error_upper_bound" : 0,
+              "sum_other_doc_count" : 0,
+              "buckets" : [
+                {
+                  "key" : "music",
+                  "doc_count" : 1
+                },
+                {
+                  "key" : "sports",
+                  "doc_count" : 1
+                }
+              ]
+            }
+          }
+        }
+         */
+        SearchResponse sr = client.prepareSearch("megacorp")
+                .setTypes("employee")
+                .setQuery(QueryBuilders.matchPhraseQuery("last_name", "smith"))
+                .addAggregation(
+                        AggregationBuilders.terms("all_interests").field("interests")
+                )
+                .get();
 
-        String json = "{\n" +
-                "    \"first_name\" : \"John\",\n" +
-                "    \"last_name\" :  \"Smith\",\n" +
-                "    \"age\" :        25,\n" +
-                "    \"about\" :      \"I love to go rock climbing\",\n" +
-                "    \"interests\": [ \"sports\", \"music\" ]\n" +
-                "}\n";
-        IndexResponse response = client.prepareIndex("megacorp", "employee", "1")
-                .setSource(json, XContentType.JSON).get();
-
-        // Index name
-        String index = response.getIndex();
-        // Type name
-        String type = response.getType();
-        // Document ID (generated or not)
-        String id = response.getId();
-        // Version (if it's the first time you index this document, you will get: 1)
-        long version = response.getVersion();
-        // status has stored current instance statement.
-        RestStatus status = response.status();
-
-        System.out.println("name    : " + index);
-        System.out.println("type    : " + type);
-        System.out.println("id      : " + id);
-        System.out.println("version : " + version);
-        System.out.println("st      : " + status.getStatus());
-        client.close();
+        // Get your facet results
+        StringTerms all_interests = sr.getAggregations().get("all_interests");
     }
+
+    public void minAggregation() {
+        MinAggregationBuilder minAggregationBuilder = AggregationBuilders.min("age").field("age");
+        SearchResponse sr = client.prepareSearch(indexName)
+                .setTypes(indexType)
+                .addAggregation(minAggregationBuilder)
+                .get();
+        Min minAge = sr.getAggregations().get("age");
+        System.out.println("min age : " + minAge.getValue());
+    }
+
+    public void maxAggregation() {
+        MaxAggregationBuilder maxAggregationBuilder = AggregationBuilders.max("age").field("age");
+        SearchResponse sr = client.prepareSearch(indexName)
+                .setTypes(indexType)
+                .addAggregation(maxAggregationBuilder)
+                .get();
+        Max maxAge = sr.getAggregations().get("age");
+        System.out.println("max age : " + maxAge.getValue());
+    }
+
+    public void sumAggregation() {
+        SumAggregationBuilder sumAggregationBuilder = AggregationBuilders.sum("totalAge").field("age");
+        SearchResponse sr = client.prepareSearch(indexName)
+                .setTypes(indexType)
+                .addAggregation(sumAggregationBuilder)
+                .get();
+        Aggregations aggregations = sr.getAggregations();
+        Sum sum = aggregations.get("totalAge");
+        System.out.println("total age : " + sum.getValue());
+    }
+
+    public void avgAggregation() {
+        AvgAggregationBuilder avgAggregationBuilder = AggregationBuilders.avg("avgAge").field("age");
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(avgAggregationBuilder).get();
+        Avg avg = sr.getAggregations().get("avgAge");
+        System.out.println("avg age : " + avg.getValue());
+    }
+
+    public void statsAggregation() {
+        StatsAggregationBuilder aggregation = AggregationBuilders.stats("agg").field("age");
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(aggregation).get();
+        Stats agg = sr.getAggregations().get("agg");
+        double min = agg.getMin();
+        double max = agg.getMax();
+        double avg = agg.getAvg();
+        double sum = agg.getSum();
+        long count = agg.getCount();
+        System.out.println("min age : " + min);
+        System.out.println("max age : " + max);
+        System.out.println("avg age : " + avg);
+        System.out.println("sum age : " + sum);
+        System.out.println("age count : " + count);
+    }
+
+    public void extendStatsAggregation() {
+        ExtendedStatsAggregationBuilder aggregation = AggregationBuilders.extendedStats("agg").field("age");
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(aggregation).get();
+        ExtendedStats agg = sr.getAggregations().get("agg");
+        double min = agg.getMin();
+        double max = agg.getMax();
+        double avg = agg.getAvg();
+        double sum = agg.getSum();
+        long count = agg.getCount();
+        double stdDeviation = agg.getStdDeviation();
+        double sumOfSquares = agg.getSumOfSquares();
+        double variance = agg.getVariance();
+        System.out.println("min : " + min);
+        System.out.println("max : " + max);
+        System.out.println("avg : " + avg);
+        System.out.println("sum : " + sum);
+        System.out.println("count : " + count);
+        System.out.println("stdDeviation : " + stdDeviation); // 标准差
+        System.out.println("sumOfSquares : " + sumOfSquares); // 平方和
+        System.out.println("variance : " + variance); // 方差
+    }
+
+    public void valueCountAggregation() {
+        ValueCountAggregationBuilder aggregation = AggregationBuilders.count("agg").field("gender");
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(aggregation).get();
+        ValueCount agg = sr.getAggregations().get("agg");
+        long value = agg.getValue();
+        System.out.println(value);
+    }
+
+    public void percentileAggregation() {
+        PercentilesAggregationBuilder aggregation = AggregationBuilders.percentiles("agg").field("age");
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(aggregation).get();
+        Percentiles agg = sr.getAggregations().get("agg");
+        // For each entry
+        for (Percentile entry : agg) {
+            double percent = entry.getPercent();    // Percent
+            double value = entry.getValue();        // Value
+            System.out.println("percent : " + percent + ", value : " + value);
+        }
+    }
+
+    public void topHitsAggr() {
+        AggregationBuilder aggregation = AggregationBuilders.terms("agg").field("age")
+                .subAggregation(AggregationBuilders.topHits("top").size(1).from(30));
+        SearchResponse sr = client.prepareSearch(indexName).setTypes(indexType).addAggregation(aggregation).get();
+        Terms agg = sr.getAggregations().get("agg");
+
+        // For each entry
+        for (Terms.Bucket entry : agg.getBuckets()) {
+            String key = String.valueOf(entry.getKey()); // bucket key
+            long docCount = entry.getDocCount(); // Doc count
+            log.info("key [{}], doc_count [{}]", key, docCount);
+
+            // We ask for top_hits for each bucket
+            TopHits topHits = entry.getAggregations().get("top");
+            for (SearchHit hit : topHits.getHits().getHits()) {
+                log.info(" -> id [{}], _source [{}]", hit.getId(), hit.getSourceAsString());
+            }
+        }
+    }
+    // ~ search api with aggregations test end =========================================================================
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         EsDemo demo = new EsDemo();
@@ -603,10 +848,22 @@ public class EsDemo {
 //        demo.bulkProccessor();
 //        demo.bulkProcessorSync();
 
+        // search api test
 //        demo.basicSearch();
 //        demo.basicSearch1();
-
-        demo.scroll();
+//        demo.scroll();
+//        demo.multiSearch();
+        // aggregation api test
+//        demo.aggregation();
+//        demo.minAggregation();
+//        demo.maxAggregation();
+//        demo.sumAggregation();
+//        demo.avgAggregation();
+//        demo.statsAggregation();
+//        demo.extendStatsAggregation();
+//        demo.valueCountAggregation();
+//        demo.percentileAggregation();
+        demo.topHitsAggr();
 
         demo.closeClient();
     }
