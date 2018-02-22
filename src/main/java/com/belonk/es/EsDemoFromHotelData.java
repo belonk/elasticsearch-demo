@@ -1,11 +1,13 @@
 package com.belonk.es;
 
+import org.apache.lucene.search.join.ScoreMode;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
@@ -42,7 +44,7 @@ public class EsDemoFromHotelData {
     public EsDemoFromHotelData() throws UnknownHostException {
         Settings settings = Settings.builder().put("cluster.name", "hmp").build();
         client = new PreBuiltTransportClient(settings)
-                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("192.168.0.106"), 9300));
+                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("localhost"), 9300));
     }
 
     //~ Methods ========================================================================================================
@@ -66,7 +68,13 @@ public class EsDemoFromHotelData {
                 // 设置仅仅想返回的字段
                 .setSource(SearchSourceBuilder.searchSource().fetchSource(new String[]{"name", "id", "cityName"}, null))
                 // match query，分词后搜索
-                .setQuery(QueryBuilders.matchQuery("name", "盛世酒店"))
+//                .setQuery(QueryBuilders.matchQuery("name", "盛世酒店"))
+//                .setQuery(QueryBuilders.matchQuery("name.keyword", "盛世酒店")) // 无法匹配
+//                .setQuery(QueryBuilders.matchQuery("name.keyword", "盛世王朝"))
+//                .setQuery(QueryBuilders.matchQuery("name", "7天连锁"))
+
+                .setQuery(QueryBuilders.matchQuery("provinceName", "湖南"))
+                .setQuery(QueryBuilders.matchQuery("name", "沃华德"))
                 .get();
         System.out.println(sr);
     }
@@ -77,7 +85,8 @@ public class EsDemoFromHotelData {
                 .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
                 .setSource(SearchSourceBuilder.searchSource().fetchSource(new String[]{"name", "address", "cityName", "provinceName"}, null))
                 //{"took":54,"timed_out":false,"_shards":{"total":5,"successful":5,"failed":0},"hits":{"total":3,"max_score":15.941391,"hits":[{"_index":"hotel","_type":"data","_id":"12","_score":15.941391,"_source":{"address":"湖墅南路198号","cityName":"杭州市","name":"杭州逸酒店","provinceName":"浙江省"}},{"_index":"hotel","_type":"data","_id":"29","_score":13.092372,"_source":{"address":"吕康大街100号","cityName":"杭州市","name":"康哥饭店","provinceName":"浙江省"}},{"_index":"hotel","_type":"data","_id":"30","_score":6.398138,"_source":{"address":"水亭门508号","cityName":"衢州市","name":"远方酒店","provinceName":"浙江省"}}]}}
-                .setQuery(QueryBuilders.multiMatchQuery("杭州", "name", "address", "cityName", "provinceName"))
+//                .setQuery(QueryBuilders.multiMatchQuery("杭州", "name", "address", "cityName", "provinceName"))
+                .setQuery(QueryBuilders.multiMatchQuery("湖南沃华德", "name", "address", "cityName", "provinceName"))
                 .get();
         System.out.println(sr);
     }
@@ -137,7 +146,8 @@ public class EsDemoFromHotelData {
 //                .setQuery(QueryBuilders.termQuery("name", "盛世王朝")) // 无法匹配，因为name默认被分词后存放，匹配不到包含盛世王朝的分词
 //                .setQuery(QueryBuilders.termQuery("name", "王")) // 匹配成功
 //                .setQuery(QueryBuilders.termQuery("name", "盛世")) // 匹配失败
-                .setQuery(QueryBuilders.termQuery("name", "王朝")) // 匹配失败，被解析为单个字符存入token
+//                .setQuery(QueryBuilders.termQuery("name", "王朝")) // 匹配失败，被解析为单个字符存入token
+                .setQuery(QueryBuilders.termQuery("id", "7000"))
                 .get();
         System.out.println(sr);
     }
@@ -227,6 +237,32 @@ public class EsDemoFromHotelData {
         System.out.println(sr);
     }
 
+    public void queryByConditions(String keyword, String childType, Double minPrice, Double maxPrice, Long minTime, Long maxTime, int from, int size, String... fields) {
+        QueryBuilder keywordQuery1 = QueryBuilders.multiMatchQuery(keyword, fields);
+        // 根据名称调整系数
+        QueryBuilder keywordQuery2 = QueryBuilders.multiMatchQuery(keyword, new String[]{"name", "name.pinyin"}).boost(2.0f);
+        QueryBuilder priceFilterQuery = QueryBuilders.boolQuery().should(
+                QueryBuilders.rangeQuery("onlinePlatformPrice").gte(minPrice).lte(maxPrice)
+        ).should(
+                QueryBuilders.rangeQuery("onlineYeguirenPrice").gte(minPrice).lte(maxPrice)
+        ).should(
+                QueryBuilders.rangeQuery("onlineSpeciallyPrice").gte(minPrice).lte(maxPrice)
+        ).should(
+                QueryBuilders.rangeQuery("onlineVipPrice").gte(minPrice).lte(maxPrice)
+        ).must(
+                QueryBuilders.rangeQuery("activeTime").gte(minTime).lte(maxTime)
+        );
+        SearchResponse sr = client.prepareSearch(indexName)
+                .setTypes(indexType).setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                .setSource(SearchSourceBuilder.searchSource().fetchSource("name", "rooms")) // 房型排除
+//                .setQuery(QueryBuilders.boolQuery().should(keywordQuery1).should(keywordQuery2)
+                .setQuery(QueryBuilders.boolQuery().must(keywordQuery1)
+                        .filter(QueryBuilders.hasChildQuery(childType, priceFilterQuery, ScoreMode.None)))
+                .setFrom(from).setSize(size)
+                .get();
+        System.out.println(sr);
+    }
+
     public static void main(String[] args) throws UnknownHostException {
         EsDemoFromHotelData demo = new EsDemoFromHotelData();
 //        demo.matchAllQuery();
@@ -240,6 +276,22 @@ public class EsDemoFromHotelData {
 //        demo.boolQuery();
 //        demo.boolQuery1();
 //        demo.queryStringQuery();
-        demo.simpleQueryStringQuery();
+//        demo.simpleQueryStringQuery();
+
+        Double minPrice = 100d, maxPrice = 200d;
+        Long minTime = 1500566400000L, maxTime = 1500652800000L;
+        String keyword = "四川", childType = "price";
+        String[] fields = {
+                "name",
+                "name.pinyin",
+                "provinceName",
+                "provinceName.pinyin",
+                "cityName",
+                "cityName.pinyin"
+        };
+        demo.queryByConditions(keyword, childType, minPrice, maxPrice, minTime, maxTime, 0, 1, fields);
+        demo.queryByConditions(keyword, childType, minPrice, maxPrice, minTime, maxTime, 1, 1, fields);
+        demo.queryByConditions(keyword, childType, minPrice, maxPrice, minTime, maxTime, 2, 1, fields);
+        demo.queryByConditions(keyword, childType, minPrice, maxPrice, minTime, maxTime, 3, 1, fields);
     }
 }

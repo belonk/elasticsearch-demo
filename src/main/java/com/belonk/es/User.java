@@ -1,6 +1,7 @@
 package com.belonk.es;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 
 /**
  * Created by sun on 2017/6/6.
@@ -21,6 +22,8 @@ public class User {
     private Integer gender;
     private String[] hovers;
 
+    private String extend;
+
     //~ Constructors ===================================================================================================
     public User() {
     }
@@ -36,7 +39,7 @@ public class User {
     //~ Methods ========================================================================================================
 
     public String toJson() {
-        return JSON.toJSONString(this);
+        return JSON.toJSONString(this, SerializerFeature.WriteMapNullValue);
     }
 
     public Long getId() {
@@ -85,5 +88,13 @@ public class User {
 
     public void setHovers(String[] hovers) {
         this.hovers = hovers;
+    }
+
+    public String getExtend() {
+        return extend;
+    }
+
+    public void setExtend(String extend) {
+        this.extend = extend;
     }
 }

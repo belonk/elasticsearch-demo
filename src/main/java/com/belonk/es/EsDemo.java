@@ -1,5 +1,6 @@
 package com.belonk.es;
 
+import com.alibaba.fastjson.JSON;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.DocWriteResponse;
 import org.elasticsearch.action.bulk.*;
@@ -23,6 +24,7 @@ import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.QueryBuilder;
@@ -68,10 +70,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Date;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -111,7 +110,7 @@ public class EsDemo {
     }
 
     public EsDemo() throws UnknownHostException {
-        Settings settings = Settings.builder().put("cluster.name", "my-application").build();
+        Settings settings = Settings.builder().put("cluster.name", "hmp").build();
         client = new PreBuiltTransportClient(settings)
                 .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("localhost"), 9300));
     }
@@ -161,6 +160,7 @@ public class EsDemo {
             String json = user.toJson();
             IndexRequestBuilder requestBuilder = client.prepareIndex(indexName, indexType, String.valueOf(user.getId()));
             requestBuilder.setSource(json, XContentType.JSON);
+            System.out.println(requestBuilder.request());
             IndexResponse response = requestBuilder.get();
             print(response);
         });
@@ -183,6 +183,15 @@ public class EsDemo {
         System.out.println("id      : " + id);
         System.out.println("version : " + version);
         System.out.println("st      : " + status.getStatus());
+    }
+
+    public void index(User user) {
+        String json = user.toJson();
+        IndexRequestBuilder requestBuilder = client.prepareIndex(indexName, indexType, String.valueOf(user.getId()));
+        requestBuilder.setSource(json, XContentType.JSON);
+        System.out.println(requestBuilder.request());
+        IndexResponse response = requestBuilder.get();
+        print(response);
     }
 
     public void getAll() {
@@ -267,15 +276,31 @@ public class EsDemo {
     }
 
     public void update() throws ExecutionException, InterruptedException {
-        User user = new User(1L, "sun3", "123456", 30, 1,
-                new String[]{"dota2", "programming", "music"});
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("sun-modify1");
+        user.setExtend("this is a extend info.");
         UpdateRequest updateRequest = new UpdateRequest();
         updateRequest.index(indexName);
         updateRequest.type(indexType);
-        updateRequest.id("2");
+        updateRequest.id("1");
         updateRequest.doc(user.toJson(), XContentType.JSON);
         UpdateResponse response = client.update(updateRequest).get();
-//        print(response);
+        print(response);
+    }
+
+    public void update1() throws ExecutionException, InterruptedException {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("sun-modify1");
+        user.setExtend("this is a extend info.");
+        UpdateRequest updateRequest = new UpdateRequest();
+        updateRequest.index(indexName);
+        updateRequest.type(indexType);
+        updateRequest.id("1");
+        updateRequest.doc(user.toJson(), XContentType.JSON);
+        UpdateResponse response = client.update(updateRequest).get();
+        print(response);
     }
 
     public void upsert(User user) throws ExecutionException, InterruptedException {
@@ -534,14 +559,19 @@ public class EsDemo {
           }
         }
         */
-        SearchResponse response = client.prepareSearch(indexName)
+        SearchRequestBuilder builder = client.prepareSearch(indexName)
                 .setTypes(indexType) // empty is all types
                 .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
                 .setQuery(QueryBuilders.termQuery("username", "sun1"))                 // Query
                 .setPostFilter(QueryBuilders.rangeQuery("age").gte(100))     // Filter
-                .setFrom(0).setSize(60).setExplain(true)
-                .get();
-        print(response);
+                .setFrom(0).setSize(60).setExplain(true);
+        // 非格式化输出
+        Map<String, String> params = new HashMap<>();
+        params.put("pretty", "false");
+        ToXContent.MapParams mapParams = new ToXContent.MapParams(params);
+        System.out.println("builder : " + builder.request().source().toString(mapParams));
+        SearchResponse response =  builder.get();
+        System.out.println("response : " + response);
     }
 
     public void basicSearch1() {
@@ -833,9 +863,10 @@ public class EsDemo {
 
 //        demo.get(id);
 //        User forUpdate = users.get(1);
-//        forUpdate.setAge(33);
-//        forUpdate.setUsername("sun2");
+//        forUpdate.setAge(3);
+//        forUpdate.setUsername("sun-index");
 //        demo.upsert(forUpdate);
+//        demo.index(forUpdate);
 //        System.out.println("upsert finished.");
 //        demo.get(id);
 //        System.out.println("get all");
@@ -849,7 +880,7 @@ public class EsDemo {
 //        demo.bulkProcessorSync();
 
         // search api test
-//        demo.basicSearch();
+        demo.basicSearch();
 //        demo.basicSearch1();
 //        demo.scroll();
 //        demo.multiSearch();
@@ -863,7 +894,7 @@ public class EsDemo {
 //        demo.extendStatsAggregation();
 //        demo.valueCountAggregation();
 //        demo.percentileAggregation();
-        demo.topHitsAggr();
+//        demo.topHitsAggr();
 
         demo.closeClient();
     }
