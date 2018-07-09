@@ -570,7 +570,7 @@ public class EsDemo {
         params.put("pretty", "false");
         ToXContent.MapParams mapParams = new ToXContent.MapParams(params);
         System.out.println("builder : " + builder.request().source().toString(mapParams));
-        SearchResponse response =  builder.get();
+        SearchResponse response = builder.get();
         System.out.println("response : " + response);
     }
 
