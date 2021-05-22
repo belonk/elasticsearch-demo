@@ -1,2 +1,2 @@
 # elasticsearch-demo
-Elasticsearch 5.6 demo project.
+Elasticsearch demo project baseed on 5.4.
